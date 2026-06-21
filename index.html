@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coin Tracker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #e6edf3; font-family: -apple-system, sans-serif; padding: 16px; }
+  h1 { text-align: center; font-size: 20px; margin-bottom: 4px; color: #58a6ff; }
+  .subtitle { text-align: center; font-size: 12px; color: #8b949e; margin-bottom: 16px; }
+  .refresh-bar { text-align: center; font-size: 11px; color: #8b949e; margin-bottom: 16px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .coin-name { font-size: 18px; font-weight: bold; }
+  .price { font-size: 22px; font-weight: bold; }
+  .pnl { font-size: 14px; font-weight: bold; padding: 4px 10px; border-radius: 20px; }
+  .pnl.profit { background: #1a4731; color: #3fb950; }
+  .pnl.loss { background: #4d1f1f; color: #f85149; }
+  .entry-row { display: flex; justify-content: space-between; font-size: 13px; color: #8b949e; margin-bottom: 8px; }
+  .levels { margin-top: 10px; }
+  .level-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-radius: 8px; margin-bottom: 4px; font-size: 13px; }
+  .level-sl { background: #2d1515; border-left: 3px solid #f85149; }
+  .level-tp { background: #0d2618; border-left: 3px solid #3fb950; }
+  .level-hit { animation: pulse 1s infinite; }
+  .level-label { color: #8b949e; }
+  .level-price { font-weight: bold; }
+  .level-action { font-size: 11px; color: #8b949e; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot-green { background: #3fb950; }
+  .dot-red { background: #f85149; }
+  .dot-yellow { background: #d29922; }
+  .alert-box { background: #f851491a; border: 1px solid #f85149; border-radius: 8px; padding: 10px; text-align: center; font-size: 13px; color: #f85149; margin-top: 8px; display: none; }
+  .tp-alert { background: #3fb9501a; border-color: #3fb950; color: #3fb950; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .loading { text-align: center; padding: 40px; color: #8b949e; }
+  .divider { border: none; border-top: 1px solid #30363d; margin: 10px 0; }
+  .summary { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; display: flex; justify-content: space-around; text-align: center; }
+  .summary-item label { font-size: 11px; color: #8b949e; display: block; }
+  .summary-item span { font-size: 16px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>📊 Coin Tracker</h1>
+<p class="subtitle">Binance Alpha Monitor</p>
+<p class="refresh-bar" id="refresh-bar">Đang tải...</p>
+
+<div class="summary">
+  <div class="summary-item">
+    <label>Tổng P&L</label>
+    <span id="total-pnl">--</span>
+  </div>
+  <div class="summary-item">
+    <label>Cập nhật</label>
+    <span id="last-update">--</span>
+  </div>
+</div>
+
+<div id="cards"></div>
+
+<script>
+const COINS = [
+  {
+    symbol: 'FHEUSDT',
+    name: 'FHE',
+    entry: 0.01979,
+    amount: 5053,
+    sl: 0.0190,
+    tps: [
+      { price: 0.0228, label: 'TP1', action: 'Bán 30%' },
+      { price: 0.0262, label: 'TP2', action: 'Bán 40%' },
+      { price: 0.0311, label: 'TP3', action: 'Bán 20%' },
+      { price: 0.0331, label: 'TP4', action: 'Bán 10%' },
+    ]
+  },
+  {
+    symbol: '4USDT',
+    name: 'Coin 4',
+    entry: 0.0265,
+    amount: 0,
+    sl: 0.0075,
+    tps: [
+      { price: 0.0093, label: 'TP1', action: 'Bán 40%' },
+      { price: 0.0103, label: 'TP2', action: 'Bán 40%' },
+      { price: 0.0130, label: 'TP3', action: 'Bán 20%' },
+    ]
+  },
+  {
+    symbol: 'COAIUSDT',
+    name: 'COAI',
+    entry: 0.96,
+    amount: 0,
+    sl: 0.30,
+    tps: [
+      { price: 0.38,  label: 'TP1', action: 'Bán 40%' },
+      { price: 0.51,  label: 'TP2', action: 'Bán 40%' },
+      { price: 0.727, label: 'TP3', action: 'Bán 20%' },
+    ]
+  }
+];
+
+let prices = {};
+
+function fmt(n, d=5) {
+  if (n >= 1) return n.toFixed(4);
+  return n.toFixed(d);
+}
+
+function pnlPct(entry, price) {
+  return ((price - entry) / entry * 100).toFixed(2);
+}
+
+async function fetchPrices() {
+  try {
+    const symbols = COINS.map(c => `"${c.symbol}"`).join(',');
+    const url = `https://fapi.binance.com/fapi/v1/ticker/price`;
+    const res = await fetch(url);
+    const data = await res.json();
+    data.forEach(d => { prices[d.symbol] = parseFloat(d.price); });
+    render();
+    updateTime();
+  } catch(e) {
+    document.getElementById('refresh-bar').textContent = '⚠️ Lỗi kết nối — thử lại sau...';
+  }
+}
+
+function updateTime() {
+  const now = new Date();
+  const t = now.toLocaleTimeString('vi-VN');
+  document.getElementById('last-update').textContent = t;
+  document.getElementById('refresh-bar').textContent = `🔄 Tự động cập nhật mỗi 30 giây | ${t}`;
+}
+
+function render() {
+  let totalPnlUsd = 0;
+  let html = '';
+
+  COINS.forEach(coin => {
+    const price = prices[coin.symbol];
+    if (!price) return;
+
+    const pct = parseFloat(pnlPct(coin.entry, price));
+    const pnlUsd = coin.amount > 0 ? ((price - coin.entry) * coin.amount).toFixed(2) : null;
+    if (pnlUsd) totalPnlUsd += parseFloat(pnlUsd);
+
+    const isProfit = pct >= 0;
+    const isSLHit = price <= coin.sl;
+    const hitTPs = coin.tps.filter(tp => price >= tp.price);
+
+    // Status dot
+    let dotClass = 'dot-yellow';
+    if (isSLHit) dotClass = 'dot-red';
+    else if (hitTPs.length > 0) dotClass = 'dot-green';
+
+    // Alert box
+    let alertHtml = '';
+    if (isSLHit) {
+      alertHtml = `<div class="alert-box" style="display:block">🚨 CẢNH BÁO! Giá chạm SL $${fmt(coin.sl)} — Cân nhắc cắt lỗ!</div>`;
+    } else if (hitTPs.length > 0) {
+      const tp = hitTPs[hitTPs.length-1];
+      alertHtml = `<div class="alert-box tp-alert" style="display:block">✅ ${tp.label} ĐẠT $${fmt(tp.price)} — ${tp.action}!</div>`;
+    }
+
+    // TP rows
+    let tpHtml = coin.tps.map(tp => {
+      const hit = price >= tp.price;
+      return `<div class="level-row level-tp ${hit ? 'level-hit' : ''}">
+        <span class="level-label">${tp.label} ${hit ? '✅' : ''}</span>
+        <span class="level-price">$${fmt(tp.price)}</span>
+        <span class="level-action">${tp.action}</span>
+      </div>`;
+    }).join('');
+
+    html += `
+    <div class="card">
+      <div class="card-header">
+        <span class="coin-name"><span class="status-dot ${dotClass}"></span>${coin.name}</span>
+        <span class="price">$${fmt(price)}</span>
+      </div>
+      <div class="entry-row">
+        <span>Entry: $${fmt(coin.entry)}</span>
+        <span class="pnl ${isProfit ? 'profit' : 'loss'}">${isProfit ? '+' : ''}${pct}%${pnlUsd ? ` ($${pnlUsd})` : ''}</span>
+      </div>
+      <hr class="divider">
+      <div class="levels">
+        <div class="level-row level-sl ${isSLHit ? 'level-hit' : ''}">
+          <span class="level-label">SL ${isSLHit ? '🚨' : ''}</span>
+          <span class="level-price">$${fmt(coin.sl)}</span>
+          <span class="level-action">Cắt lỗ</span>
+        </div>
+        ${tpHtml}
+      </div>
+      ${alertHtml}
+    </div>`;
+  });
+
+  document.getElementById('cards').innerHTML = html;
+
+  const totalEl = document.getElementById('total-pnl');
+  if (totalPnlUsd !== 0) {
+    totalEl.textContent = `${totalPnlUsd >= 0 ? '+' : ''}$${totalPnlUsd.toFixed(2)}`;
+    totalEl.style.color = totalPnlUsd >= 0 ? '#3fb950' : '#f85149';
+  }
+}
+
+fetchPrices();
+setInterval(fetchPrices, 30000);
+</script>
+</body>
+</html>
