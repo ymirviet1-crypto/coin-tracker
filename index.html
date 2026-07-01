@@ -112,7 +112,8 @@
 <div class="tabs">
   <div class="tab active" data-tab="watch" onclick="setTab('watch')">📌 Theo dõi</div>
   <div class="tab" data-tab="scan" onclick="setTab('scan')">🔥 Cơ hội</div>
-  <div class="tab" data-tab="alpha" onclick="setTab('alpha')">⚡ Alpha</div>
+  <div class="tab" data-tab="alpha" onclick="setTab('alpha')">⚡ Tích luỹ</div>
+  <div class="tab" data-tab="balpha" onclick="setTab('balpha')">🅰️ Alpha</div>
   <div class="tab" data-tab="sector" onclick="setTab('sector')">🧩 Ngành</div>
   <div class="tab" data-tab="news" onclick="setTab('news')">📰 Tin</div>
   <div class="tab" data-tab="journal" onclick="setTab('journal')">📒 Nhật ký</div>
@@ -121,6 +122,7 @@
 <div id="tab-watch"></div>
 <div id="tab-scan" style="display:none"></div>
 <div id="tab-alpha" style="display:none"></div>
+<div id="tab-balpha" style="display:none"></div>
 <div id="tab-sector" style="display:none"></div>
 <div id="tab-news" style="display:none"></div>
 <div id="tab-journal" style="display:none"></div>
@@ -201,6 +203,8 @@ const GLOSSARY={
   posmgmt:['Sức khoẻ vị thế','Khi anh ĐÃ mua: chấm 0–100 xem lệnh đang khoẻ hay nguy. Khoẻ = giữ; Theo dõi; Giảm rủi ro = chốt bớt; Thoát = nên ra. Dựa trên lời/lỗ, giá vs EMA, tín hiệu thoát.'],
   prebreakout:['Sắp có sóng (nén chặt)','Coin đang "nén": biến động co lại (Bollinger bóp hẹp), giá đi ngang sát kháng cự, khối lượng tích luỹ âm thầm — như lò xo nén chờ bung. Số "Nén %" càng cao càng nén chặt. Ưu tiên loại NÀY thay vì coin đã tăng (dễ đu đỉnh).'],
   earlyalpha:['Early Alpha (Alpha sớm)','Coin đang TÍCH LUỸ trước khi chạy: nén chặt + mạnh hơn BTC + khối lượng bắt đầu nhúc nhích + còn dưới đỉnh 30 ngày (chưa phá). Bắt sóng từ sớm — tiềm năng cao nhưng phải KIÊN NHẪN (có thể đi ngang lâu), rủi ro lớn.'],
+  dexflow:['Dòng tiền DEX (Mua/Bán)','Tỉ lệ lệnh MUA vs BÁN thật trên sàn phi tập trung (DexScreener). >55% mua = đang được gom (tích cực). <45% = đang bị xả. Gần nhất với "theo dõi dòng tiền" mà lấy được miễn phí. Dùng cho coin có giao dịch trên DEX.'],
+  contractsafe:['An toàn contract','Quét hợp đồng thông minh của coin (GoPlus): honeypot (mua được không bán được), có mint thêm được không, blacklist, thuế bán, % ví lớn nhất, LP đã khoá chưa. Risk cao = dễ rug/lừa → TRÁNH. Chỉ áp dụng coin on-chain (EVM).'],
 };
 function explain(k){const g=GLOSSARY[k];if(!g)return;document.getElementById('help-title').textContent=g[0];document.getElementById('help-body').innerHTML=`<p style="font-size:13px;line-height:1.6">${g[1]}</p>`;document.getElementById('help-modal').classList.add('show')}
 function openGlossary(){document.getElementById('help-title').textContent='❓ Giải thích các chỉ số';let h='';Object.values(GLOSSARY).forEach(g=>h+=`<div class="gloss-item"><h3>${g[0]}</h3><p>${g[1]}</p></div>`);document.getElementById('help-body').innerHTML=h;document.getElementById('help-modal').classList.add('show')}
@@ -215,7 +219,10 @@ const DEFAULT_COINS=[{symbol:'FHEUSDT',name:'FHE',entry:0.01979,amount:5053},{sy
 const TFS=['15m','1h','4h','1d'],TF_W={'15m':0.15,'1h':0.25,'4h':0.35,'1d':0.25},TF_VN={'15m':'15P','1h':'1G','4h':'4G','1d':'1NG'};
 function loadCoins(){try{return JSON.parse(localStorage.getItem('coins_v6'))||DEFAULT_COINS}catch{return DEFAULT_COINS}}
 function saveCoins(){localStorage.setItem('coins_v6',JSON.stringify(COINS))}
-let COINS=loadCoins(),data={},fng=null,regime=null,breadth=null,global=null,scanResults=null,alphaResults=null,sectorResults=null,stress=null,riskMode=null,notifEnabled=false,curTab='watch',expanded={},cardOpen={};
+const BALPHA_SEED=[{symbol:'FHEUSDT',name:'FHE',entry:null,amount:0},{symbol:'COAIUSDT',name:'COAI',entry:null,amount:0},{symbol:'4USDT',name:'Coin 4',entry:null,amount:0}];
+function loadBAlpha(){try{return JSON.parse(localStorage.getItem('balpha_v1'))||BALPHA_SEED}catch{return BALPHA_SEED}}
+function saveBAlpha(){localStorage.setItem('balpha_v1',JSON.stringify(BALPHA))}
+let COINS=loadCoins(),data={},fng=null,regime=null,breadth=null,global=null,scanResults=null,alphaResults=null,sectorResults=null,stress=null,riskMode=null,notifEnabled=false,curTab='watch',expanded={},cardOpen={},BALPHA=loadBAlpha(),dataBAlpha={},addTarget='watch';
 let btcCloses=null,ethCloses=null,allTickers=null;const alertedKeys=new Set(),cache=new Map();
 async function cached(k,ttl,fn){const c=cache.get(k);if(c&&Date.now()-c.ts<ttl)return c.v;const v=await fn();cache.set(k,{v,ts:Date.now()});return v}
 
@@ -262,12 +269,17 @@ async function lsRatio(s){try{const d=await jget(`https://fapi.binance.com/futur
 async function fearGreed(){try{const d=await jget('https://api.alternative.me/fng/?limit=1');return{value:+d.data[0].value,label:d.data[0].value_classification}}catch{return null}}
 async function allTickers24(){return cached('all24',55000,()=>jget('https://fapi.binance.com/fapi/v1/ticker/24hr'))}
 async function globalData(){return cached('glob',300000,async()=>{try{const d=await jget('https://api.coingecko.com/api/v3/global');return{btcDom:d.data.market_cap_percentage.btc,mcap:d.data.total_market_cap.usd,mcapChg:d.data.market_cap_change_percentage_24h_usd}}catch{return null}})}
+// DexScreener: dòng tiền mua/bán + thanh khoản DEX (free, không key)
+const GOPLUS_CHAIN={ethereum:'1',bsc:'56',base:'8453',arbitrum:'42161',polygon:'137',optimism:'10',avalanche:'43114',fantom:'250',cronos:'25',zksync:'324',linea:'59144',scroll:'534352',opbnb:'204'};
+async function dexData(sym){return cached('dex'+sym,300000,async()=>{try{const base=sym.replace('USDT','');const d=await jget('https://api.dexscreener.com/latest/dex/search?q='+encodeURIComponent(base));if(!d.pairs||!d.pairs.length)return null;const cand=d.pairs.filter(p=>p.baseToken&&p.baseToken.symbol&&p.baseToken.symbol.toUpperCase()===base.toUpperCase());const pool=(cand.length?cand:d.pairs).filter(p=>p.liquidity&&p.liquidity.usd);if(!pool.length)return null;pool.sort((a,b)=>b.liquidity.usd-a.liquidity.usd);const p=pool[0];const tx=p.txns&&p.txns.h24?p.txns.h24:{buys:0,sells:0};const tot=(tx.buys||0)+(tx.sells||0);const ratio=tot?tx.buys/tot:0.5;return{ratio,buys:tx.buys||0,sells:tx.sells||0,liqUsd:p.liquidity.usd,vol24:p.volume&&p.volume.h24?p.volume.h24:0,chain:p.chainId,dex:p.dexId,address:p.baseToken.address,gpChain:GOPLUS_CHAIN[p.chainId]||null}}catch{return null}})}
+// GoPlus: chấm an toàn contract (free)
+async function goPlus(chain,addr){return cached('gp'+chain+addr,1800000,async()=>{try{const d=await jget('https://api.gopluslabs.io/api/v1/token_security/'+chain+'?contract_addresses='+addr);const r=d.result&&d.result[addr.toLowerCase()];if(!r)return null;let risk=0;const flags=[];if(r.is_honeypot==='1'){risk+=60;flags.push('⛔ Honeypot')}if(r.cannot_sell_all==='1'){risk+=25;flags.push('Không bán hết')}if(r.is_mintable==='1'){risk+=15;flags.push('Mint được')}if(r.is_blacklisted==='1'){risk+=12;flags.push('Có blacklist')}const st=parseFloat(r.sell_tax||0)*100;if(st>10){risk+=15;flags.push('Thuế bán '+st.toFixed(0)+'%')}let topPct=0;if(r.holders&&r.holders[0])topPct=parseFloat(r.holders[0].percent||0)*100;if(topPct>30){risk+=15;flags.push('Top holder '+topPct.toFixed(0)+'%')}let lpLocked=false,hasLp=false;if(r.lp_holders&&r.lp_holders.length){hasLp=true;lpLocked=r.lp_holders.some(h=>h.is_locked==1||h.is_locked==='1')}if(hasLp&&!lpLocked){risk+=10;flags.push('LP chưa khoá')}risk=Math.min(100,risk);const label=risk<=30?'An toàn':risk<=60?'Cẩn trọng':'Nguy hiểm';return{risk,label,riskCls:risk<=30?'up':risk<=60?'warn':'down',flags:flags.slice(0,4)}}catch{return null}})}
 function fngVN(l){return{'Extreme Fear':'Sợ tột độ','Fear':'Sợ hãi','Neutral':'Trung tính','Greed':'Tham lam','Extreme Greed':'Tham tột độ'}[l]||l}
 
 async function detectRegime(){try{const k=await klines('BTCUSDT','1d');const c=k.map(x=>+x[4]);btcCloses=c;const price=c[c.length-1],e50=emaLast(c,50),e200=emaLast(c,200);let status,conf,cls;if(price>e50&&e50>e200){status='TĂNG';cls='up';conf=Math.min(95,60+Math.round((price/e200-1)*100))}else if(price<e50&&e50<e200){status='GIẢM';cls='down';conf=Math.min(95,60+Math.round((1-price/e200)*100))}else{status='ĐI NGANG';cls='warn';conf=55}return{status,conf,cls,bear:price<e50&&e50<e200,bull:price>e50&&e50>e200}}catch{return null}}
 async function loadEth(){try{ethCloses=(await klines('ETHUSDT','1d')).map(x=>+x[4])}catch{ethCloses=null}}
 function computeBreadth(){if(!allTickers)return null;let up=0,nt=0,dn=0,tot=0;allTickers.forEach(t=>{if(!t.symbol.endsWith('USDT'))return;if(+t.quoteVolume<1e6)return;const ch=+t.priceChangePercent;tot++;if(ch>2)up++;else if(ch<-2)dn++;else nt++});if(!tot)return null;return{up:Math.round(up/tot*100),nt:Math.round(nt/tot*100),dn:Math.round(dn/tot*100)}}
-function computeSectors(){if(!allTickers)return null;const acc={};allTickers.forEach(t=>{if(!t.symbol.endsWith('USDT'))return;if(+t.quoteVolume<2e6)return;const s=sectorOf(t.symbol);if(!s)return;(acc[s]=acc[s]||[]).push(+t.priceChangePercent)});const arr=Object.entries(acc).map(([k,v])=>({sector:k,avg:v.reduce((a,b)=>a+b,0)/v.length,n:v.length}));arr.sort((a,b)=>b.avg-a.avg);return arr}
+function computeSectors(){if(!allTickers)return null;const acc={};allTickers.forEach(t=>{if(!t.symbol.endsWith('USDT'))return;if(+t.quoteVolume<2e6)return;const s=sectorOf(t.symbol);if(!s)return;(acc[s]=acc[s]||[]).push({symbol:t.symbol,change:+t.priceChangePercent,price:+t.lastPrice,qv:+t.quoteVolume})});const arr=Object.entries(acc).map(([k,v])=>{v.sort((a,b)=>b.change-a.change);return{sector:k,avg:v.reduce((a,b)=>a+b.change,0)/v.length,n:v.length,coins:v}});arr.sort((a,b)=>b.avg-a.avg);return arr}
 
 function analyzeTF(k){const h=k.map(x=>+x[2]),l=k.map(x=>+x[3]),c=k.map(x=>+x[4]),v=k.map(x=>+x[5]);const price=c[c.length-1],e20=emaLast(c,20),e50=emaLast(c,50),e100=emaLast(c,100),e200=emaLast(c,200);const rA=rsiArr(c),rsi=rA[rA.length-1]||50,_macd=macd(c),srsi=stochRsi(c),_atr=atr(h,l,c),bb=bollinger(c);const obvUp=obvUpFn(c,v),_vwap=vwap(h,l,c,v);const avgVol=v.slice(-21,-1).reduce((a,b)=>a+b,0)/20,curVol=v[v.length-1],volSpike=curVol>2*avgVol,volRatio=avgVol?curVol/avgVol:1;const ms=marketStructure(h,l,c),_fvg=fvg(h,l),div=rsiDiv(c,rA);let s=50;if(price>e20)s+=4;if(e20>e50)s+=5;if(e50>e100)s+=4;if(e100>e200)s+=4;if(price<e20)s-=4;if(e20<e50)s-=5;if(e50<e100)s-=4;if(e100<e200)s-=4;if(_macd.hist>0&&_macd.hist>_macd.prevHist)s+=6;else if(_macd.hist<0)s-=5;if(rsi>50&&rsi<70)s+=4;else if(rsi>=70)s-=3;else if(rsi<30)s+=3;else if(rsi<50)s-=3;if(srsi<20)s+=3;else if(srsi>80)s-=3;if(obvUp)s+=4;else s-=3;if(volSpike&&price>c[c.length-2])s+=4;if(price>_vwap)s+=2;else s-=2;if(ms.bos)s+=4;if(ms.label.includes('Tăng'))s+=3;if(ms.label.includes('Giảm'))s-=3;if(div==='bear')s-=5;if(div==='bull')s+=4;s=Math.max(0,Math.min(100,Math.round(s)));return{price,e20,e50,e100,e200,rsi,srsi,macd:_macd,atr:_atr,bb,obvUp,vwap:_vwap,volSpike,volRatio,ms,fvg:_fvg,div,score:s,support:Math.min(...l.slice(-20)),resistance:Math.max(...h.slice(-20)),closes:c,highs:h,lows:l,vols:v}}
 
@@ -282,6 +294,7 @@ async function analyzeCoin(coin){
   let bull=0;TFS.forEach(t=>bull+=tf[t].score*TF_W[t]);bull=Math.round(bull);
   let oiTrend=0;if(oih&&oih.length>5)oiTrend=(oih[oih.length-1]-oih[oih.length-6])/oih[oih.length-6]*100;
   const trap=trapDetect(b4.highs,b4.lows,b4.closes,b4.vols);
+  const pb=preBreakout(b4.highs,b4.lows,b4.closes,b4.vols);
   // component scores
   let trendC=0;{let t=0;if(price>b4.e20)t+=25;if(b4.e20>b4.e50)t+=25;if(b4.e50>b4.e100)t+=25;if(b4.e100>b4.e200)t+=25;trendC=t}
   let structRaw=50;{if(b4.ms.label.includes('Tăng'))structRaw+=25;if(b4.ms.label.includes('Giảm'))structRaw-=30;if(b4.ms.bos)structRaw+=15;if(b4.div==='bear')structRaw-=20;if(b4.div==='bull')structRaw+=15;if(b4.fvg==='bull')structRaw+=5;structRaw=Math.max(0,Math.min(100,structRaw))}
@@ -338,17 +351,24 @@ async function analyzeCoin(coin){
   // confirmations
   const confirms=[];if(trendC>=75)confirms.push('Xu hướng');if(b4.ms.label.includes('Tăng')||b4.ms.bos)confirms.push('Cấu trúc');if(rs>=55)confirms.push('Mạnh hơn BTC');if(b4.obvUp||b4.volSpike)confirms.push('Khối lượng');if(b4.macd.hist>0)confirms.push('Động lượng');if(futC>=65)confirms.push('Futures');if(liqScore>=70)confirms.push('Thanh khoản');if(rr>=2.5)confirms.push('RR tốt');const nConf=confirms.length;
   const mandatory=(b4.ms.label.includes('Tăng')||b4.ms.bos)&&rs>=55&&(b4.obvUp||b4.volSpike);
-  // Reco — Institutional Filter V3 (RR≥2.5 · 6 xác nhận · bắt buộc cấu trúc+RS+khối lượng)
+  const sellSig=[];if(b4.div==='bear')sellSig.push('RSI phân kỳ giảm');if(b4.macd.hist<0&&b4.macd.prevHist>=0)sellSig.push('MACD cắt xuống');if(!b4.obvUp)sellSig.push('Khối lượng yếu');if(b4.ms.label.includes('Giảm'))sellSig.push('Cấu trúc gãy');if(rs<45)sellSig.push('Yếu hơn thị trường');
+  const holding=coin.entry!=null,downtrend=!(b4.e20>b4.e50)&&b4.ms.label.includes('Giảm'),coiling=pb&&pb.score>=55&&!downtrend;
+  // Reco — theo NGỮ CẢNH (giữ hay chưa giữ) + nhận diện tích luỹ. Chưa giữ thì KHÔNG bao giờ "BÁN".
   const bearBlock=regime&&regime.bear,trapBlock=trap&&!trap.bullish&&trap.prob>=70;
   let reco,recoClass;
   const strongBuy=!bearBlock&&mandatory&&aiScore>=85&&confidence>=75&&structC>=75&&rs>=80&&volC>=70&&liqScore>=70&&futC>=65&&health>=75&&(!trap||trap.bullish)&&pBull>=70&&trendStage!=='Cạn kiệt'&&!noChase&&rr>=2.5&&nConf>=6;
+  const buyOK=!bearBlock&&mandatory&&aiScore>=68&&nConf>=4&&liqScore>=50&&rr>=2&&!noChase&&trendStage!=='Cạn kiệt';
   if(trapBlock){reco='TRÁNH (nghi bẫy)';recoClass='down'}
   else if(strongBuy){reco='MUA MẠNH';recoClass='up'}
-  else if(noChase&&aiScore>=65&&!bearBlock){reco='THEO DÕI — chờ pullback';recoClass='warn'}
-  else if(aiScore>=70&&mandatory&&nConf>=4&&liqScore>=50&&rr>=2&&!bearBlock){reco='MUA';recoClass='up'}
-  else if(aiScore>=45){reco='GIỮ / CHỜ';recoClass='warn'}
-  else if(aiScore>=30){reco='BÁN';recoClass='down'}
-  else{reco='BÁN MẠNH';recoClass='down'}
+  else if(buyOK){reco='MUA';recoClass='up'}
+  else if(noChase&&!bearBlock&&aiScore>=55){reco='THEO DÕI — chờ pullback';recoClass='warn'}
+  else if(coiling&&!bearBlock){reco='🌊 CHỜ SÓNG — gom dần';recoClass='warn'}
+  else if(holding&&(sellSig.length>=3||(downtrend&&exitScore>60))){reco='BÁN MẠNH';recoClass='down'}
+  else if(holding&&(sellSig.length>=2||exitScore>60||aiScore<35)){reco='BÁN / chốt bớt';recoClass='down'}
+  else if(holding){reco=aiScore>=50?'GIỮ':'GIỮ — cân nhắc giảm';recoClass='warn'}
+  else if(aiScore>=48){reco='👀 THEO DÕI';recoClass='warn'}
+  else if(downtrend){reco='TRÁNH — đang giảm';recoClass='down'}
+  else{reco='👀 THEO DÕI — chờ điểm vào';recoClass='warn'}
   // grade
   let grade,gradeCls;if(aiScore>=90&&confidence>=85&&rs>=80&&volC>=75&&alignment>=80&&riskCls!=='down'&&rr>=3){grade='A+';gradeCls='gA'}else if(aiScore>=80&&confidence>=70&&rs>=60&&rr>=2){grade='A';gradeCls='gA'}else if(aiScore>=65){grade='B';gradeCls='gB'}else if(aiScore>=50){grade='C';gradeCls='gC'}else{grade='TRÁNH';gradeCls='gX'}
   // Bảo toàn vốn: thị trường gấu → tối đa hạng B (trừ khi cực mạnh)
@@ -367,8 +387,11 @@ async function analyzeCoin(coin){
   if(oiTrend>5&&change24>0)reasons.push({t:`OI +${oiTrend.toFixed(0)}% + giá tăng — dòng tiền lớn gom`,c:'pos'});else if(oiTrend>5&&change24<0)reasons.push({t:`OI +${oiTrend.toFixed(0)}% + giá giảm — short áp đảo`,c:'neg'});
   if(b4.ms.bos)reasons.push({t:'BOS — phá vỡ cấu trúc tăng',c:'pos'});
   if(b4.rsi>=70)risks.push('RSI '+b4.rsi.toFixed(0)+' quá mua');if(fund!=null&&fund>0.001)risks.push('Funding cao '+(fund*100).toFixed(3)+'%');if(b4.div==='bear')risks.push('RSI phân kỳ giảm');if(price>b4.resistance*0.98)risks.push('Sát kháng cự');if(bearBlock)risks.push('Thị trường chung đang giảm');
-  const sellSig=[];if(b4.div==='bear')sellSig.push('RSI phân kỳ giảm');if(b4.macd.hist<0&&b4.macd.prevHist>=0)sellSig.push('MACD cắt xuống');if(!b4.obvUp)sellSig.push('Khối lượng yếu');if(b4.ms.label.includes('Giảm'))sellSig.push('Cấu trúc gãy');if(rs<45)sellSig.push('Yếu hơn thị trường');
-  return{price,change24,tf,bull,aiScore,health,confidence,alignment,rs,rsBtc,rsEth,futC,regimeC,structC,volC,momC,risk,riskCls,reco,recoClass,grade,gradeCls,trap,confirms,nConf,reasons,risks,sellSig,fund,oi,oiTrend,ls,entries,SL,TP,rr,entryRef,invalid,support,resistance,atr:_atr,quoteVol,prob:{bull:pBull,neu:pNeu,bear:pBear},genTime:new Date(),expHours:24,liqScore,liqClass,trendStage,trendCaution,noChase,pullback,exitScore,exitLabel,corrBtc,corrLabel,rrQ,rrCls,alloc,posHealth,posStatus,posStatusCls}}
+  const dex=await dexData(coin.symbol).catch(()=>null);
+  let safety=null;if(dex&&dex.address&&dex.gpChain)safety=await goPlus(dex.gpChain,dex.address).catch(()=>null);
+  if(dex){if(dex.ratio>=0.6&&dex.buys+dex.sells>50)reasons.push({t:`Lệnh MUA áp đảo trên DEX (${(dex.ratio*100).toFixed(0)}%) — đang gom`,c:'pos'});else if(dex.ratio<=0.4&&dex.buys+dex.sells>50)risks.push('Lệnh BÁN áp đảo trên DEX ('+(100-dex.ratio*100).toFixed(0)+'%)')}
+  if(safety&&safety.risk>60)risks.push('Contract rủi ro cao: '+safety.flags.join(', '));
+  return{price,change24,tf,bull,aiScore,health,confidence,alignment,rs,rsBtc,rsEth,futC,regimeC,structC,volC,momC,risk,riskCls,reco,recoClass,grade,gradeCls,trap,confirms,nConf,reasons,risks,sellSig,fund,oi,oiTrend,ls,entries,SL,TP,rr,entryRef,invalid,support,resistance,atr:_atr,quoteVol,prob:{bull:pBull,neu:pNeu,bear:pBear},genTime:new Date(),expHours:24,liqScore,liqClass,trendStage,trendCaution,noChase,pullback,exitScore,exitLabel,corrBtc,corrLabel,rrQ,rrCls,alloc,posHealth,posStatus,posStatusCls,coiling,dex,safety}}
 
 async function fetchAll(){
   [fng,regime,global]=await Promise.all([fearGreed(),detectRegime(),globalData()]);
@@ -377,7 +400,8 @@ async function fetchAll(){
   stress=computeStress();riskMode=(regime&&regime.bull&&stress<60)?'TẤN CÔNG':((regime&&regime.bear)||stress>80)?'PHÒNG THỦ':'BÌNH THƯỜNG';
   if(fng)localStorage.setItem('fng',JSON.stringify(fng));
   await Promise.all(COINS.map(async c=>{try{data[c.symbol]=await analyzeCoin(c)}catch(e){console.warn(c.symbol,e)}}));
-  renderMarket();renderBreadth();renderHeatmap();render();if(curTab==='sector')renderSector();updateTime();
+  await Promise.all(BALPHA.map(async c=>{try{dataBAlpha[c.symbol]=await analyzeCoin(c)}catch(e){}}));
+  renderMarket();renderBreadth();renderHeatmap();render();renderBAlpha();if(curTab==='sector')renderSector();updateTime();
 }
 
 async function scanMarket(){
@@ -386,10 +410,10 @@ async function scanMarket(){
     const all=allTickers||await allTickers24();
     let cands=all.filter(t=>{if(!t.symbol.endsWith('USDT'))return false;const qv=+t.quoteVolume,hi=+t.highPrice,lo=+t.lowPrice,ch=+t.priceChangePercent;if(qv<8e6||hi===lo)return false;return ch<12}).map(t=>({symbol:t.symbol,price:+t.lastPrice,change:+t.priceChangePercent,qv:+t.quoteVolume})).sort((a,b)=>b.qv-a.qv).slice(0,40);
     const coil=[],oversold=[],strong=[];
-    for(const c of cands){try{const k=await klines(c.symbol,'4h');const a=analyzeTF(k);const rs=rsScore(a.closes,btcCloses,7);const pb=preBreakout(a.highs,a.lows,a.closes,a.vols);const trap=trapDetect(a.highs,a.lows,a.closes,a.vols);const it={...c,rsi:a.rsi,score:a.score,rs,pb:pb.score,squeeze:pb.squeeze,distRes:pb.distRes};
-      if(pb.score>=55&&c.change<10&&!(trap&&!trap.bullish))coil.push(it);
-      if(a.rsi<=33&&c.change<5)oversold.push(it);
-      if(rs>=60&&c.change<10&&a.rsi<62)strong.push(it);
+    for(const c of cands){try{const k=await klines(c.symbol,'4h');const a=analyzeTF(k);const rs=rsScore(a.closes,btcCloses,7);const pb=preBreakout(a.highs,a.lows,a.closes,a.vols);const trap=trapDetect(a.highs,a.lows,a.closes,a.vols);const up=a.e20>a.e50,notDown=!a.ms.label.includes('Giảm');const it={...c,rsi:a.rsi,score:a.score,rs,pb:pb.score,squeeze:pb.squeeze,distRes:pb.distRes};
+      if(pb.score>=55&&c.change<10&&up&&notDown&&a.srsi<85&&rs>=50&&!(trap&&!trap.bullish))coil.push(it);
+      if(a.rsi<=33&&c.change<5&&rs>=42)oversold.push(it);
+      if(rs>=60&&c.change<10&&a.rsi<62&&up&&notDown)strong.push(it);
     }catch(e){}}
     coil.sort((a,b)=>b.pb-a.pb);oversold.sort((a,b)=>a.rsi-b.rsi);strong.sort((a,b)=>b.rs-a.rs);
     scanResults={coil:coil.slice(0,8),oversold:oversold.slice(0,6),strong:strong.slice(0,6)};renderScan();
@@ -403,22 +427,24 @@ async function scanAlpha(){
     let cands=all.filter(t=>{if(!t.symbol.endsWith('USDT'))return false;const qv=+t.quoteVolume,ch=+t.priceChangePercent;return qv>2e6&&ch>-8&&ch<12}).map(t=>({symbol:t.symbol,price:+t.lastPrice,change:+t.priceChangePercent,qv:+t.quoteVolume})).sort((a,b)=>b.qv-a.qv).slice(0,45);
     const alphas=[];
     for(const c of cands){try{const kd=await klines(c.symbol,'1d');const dh=kd.map(x=>+x[2]),dl=kd.map(x=>+x[3]),dc=kd.map(x=>+x[4]),dv=kd.map(x=>+x[5]);const pb=preBreakout(dh,dl,dc,dv);const rs=rsScore(dc,btcCloses,7),rsE=rsScore(dc,ethCloses,7);const volNow=dv[dv.length-1],volAvg=dv.slice(-8,-1).reduce((a,b)=>a+b,0)/7,volWake=volAvg?volNow/volAvg:1;const high30=Math.max(...dh.slice(-31,-1));const near30=(high30-c.price)/c.price*100;
+      const e50=emaLast(dc,50),dayUp=c.price>e50,ms=marketStructure(dh,dl,dc);
       let alpha=pb.score*0.5;if(rs>=55)alpha+=15;if(rsE>=55)alpha+=8;if(near30>0&&near30<12)alpha+=15;if(volWake>1.3&&volWake<3)alpha+=10;if(c.change>=-2&&c.change<8)alpha+=6;alpha=Math.min(100,Math.round(alpha));
-      if(alpha>=50)alphas.push({...c,rsi:0,score:alpha,rs,squeeze:pb.squeeze,near30:Math.round(near30),volWake})}catch(e){}}
+      if(alpha>=50&&dayUp&&rs>=50&&!ms.label.includes('Giảm'))alphas.push({...c,rsi:0,score:alpha,rs,squeeze:pb.squeeze,near30:Math.round(near30),volWake})}catch(e){}}
     alphas.sort((a,b)=>b.score-a.score);alphaResults=alphas.slice(0,10);renderAlpha();
   }catch(e){document.getElementById('tab-alpha').innerHTML='<div class="scanning">⚠️ Lỗi (thử 4G/VPN)</div>'}
 }
 
 async function loadNews(){const box=document.getElementById('tab-news');if(!WORKER_URL){box.innerHTML='<div class="empty">📰 Tin tức chưa bật.<br><br>App chạy 100% client-side nên tin cần "cầu nối" Cloudflare Worker miễn phí (xem SETUP.md). Dựng xong dán link vào WORKER_URL.<br><br>Tạm dùng <b>Fear & Greed</b> + <b>Độ rộng TT</b> + <b>Sector</b>.</div>';return}box.innerHTML='<div class="scanning">📰 Đang tải tin...</div>';try{const news=await jget(WORKER_URL+'/news');let h='';news.forEach(n=>h+=`<div class="news-item"><a href="${n.url}" target="_blank">${n.title}</a><div class="news-meta">${n.source} · ${n.published||''} ${n.sentiment?'· '+n.sentiment:''}</div></div>`);box.innerHTML=h||'<div class="empty">Không có tin</div>'}catch(e){box.innerHTML='<div class="empty">⚠️ Lỗi tải tin.</div>'}}
 
-function setTab(t){curTab=t;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));['watch','scan','alpha','sector','news','journal'].forEach(x=>document.getElementById('tab-'+x).style.display=x===t?'block':'none');if(t==='news')loadNews();if(t==='sector')renderSector();if(t==='journal')renderJournal();if(t==='scan'&&!scanResults)document.getElementById('tab-scan').innerHTML='<div class="empty">Nhấn 🔍 Quét cơ hội.</div>';if(t==='alpha'&&!alphaResults)scanAlpha()}
-function openModal(){['f-symbol','f-name','f-entry','f-amount'].forEach(id=>document.getElementById(id).value='');document.getElementById('modal').classList.add('show')}
+function setTab(t){curTab=t;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));['watch','scan','alpha','balpha','sector','news','journal'].forEach(x=>document.getElementById('tab-'+x).style.display=x===t?'block':'none');if(t==='news')loadNews();if(t==='sector')renderSector();if(t==='journal')renderJournal();if(t==='balpha')renderBAlpha();if(t==='scan'&&!scanResults)document.getElementById('tab-scan').innerHTML='<div class="empty">Nhấn 🔍 Quét cơ hội.</div>';if(t==='alpha'&&!alphaResults)scanAlpha()}
+function openModal(){addTarget='watch';['f-symbol','f-name','f-entry','f-amount'].forEach(id=>document.getElementById(id).value='');document.getElementById('modal').classList.add('show')}
+function openBAlphaModal(){addTarget='balpha';['f-symbol','f-name','f-entry','f-amount'].forEach(id=>document.getElementById(id).value='');document.getElementById('modal').classList.add('show')}
 function closeModal(){document.getElementById('modal').classList.remove('show')}
-function addCoin(){const symbol=document.getElementById('f-symbol').value.trim().toUpperCase();const name=document.getElementById('f-name').value.trim()||symbol.replace('USDT','');const entry=parseFloat(document.getElementById('f-entry').value);const amount=parseFloat(document.getElementById('f-amount').value)||0;if(!symbol){alert('Nhập mã coin');return}if(COINS.find(c=>c.symbol===symbol)){alert('Coin đã có!');return}COINS.push({symbol,name,entry:isNaN(entry)?null:entry,amount});saveCoins();closeModal();fetchAll()}
+function addCoin(){const symbol=document.getElementById('f-symbol').value.trim().toUpperCase();const name=document.getElementById('f-name').value.trim()||symbol.replace('USDT','');const entry=parseFloat(document.getElementById('f-entry').value);const amount=parseFloat(document.getElementById('f-amount').value)||0;if(!symbol){alert('Nhập mã coin');return}const list=addTarget==='balpha'?BALPHA:COINS;if(list.find(c=>c.symbol===symbol)){alert('Coin đã có!');return}list.push({symbol,name,entry:isNaN(entry)?null:entry,amount});if(addTarget==='balpha')saveBAlpha();else saveCoins();closeModal();fetchAll()}
 function addFromScan(s){if(COINS.find(c=>c.symbol===s)){alert('Đã có');return}COINS.push({symbol:s,name:s.replace('USDT',''),entry:null,amount:0});saveCoins();fetchAll();alert(s+' đã thêm!')}
-function deleteCoin(s){if(!confirm('Xoá '+s+'?'))return;COINS=COINS.filter(c=>c.symbol!==s);saveCoins();render();renderHeatmap()}
-function toggleDetail(s){expanded[s]=!expanded[s];render()}
-function toggleCard(s){cardOpen[s]=!cardOpen[s];render()}
+function deleteCoin(s){if(!confirm('Xoá '+s+'?'))return;COINS=COINS.filter(c=>c.symbol!==s);BALPHA=BALPHA.filter(c=>c.symbol!==s);saveCoins();saveBAlpha();render();renderBAlpha();renderHeatmap()}
+function toggleDetail(s){expanded[s]=!expanded[s];render();renderBAlpha()}
+function toggleCard(s){cardOpen[s]=!cardOpen[s];render();renderBAlpha()}
 function expandAll(v){COINS.forEach(c=>cardOpen[c.symbol]=v);render()}
 let tvW=null;
 function openChart(s,n){document.getElementById('chart-title').textContent='📈 '+n;document.getElementById('chart-modal-bg').classList.add('show');document.getElementById('tv_chart').innerHTML='';tvW=new TradingView.widget({symbol:'BINANCE:'+s+'.P',interval:'240',container_id:'tv_chart',autosize:true,theme:'dark',style:'1',locale:'vi_VN',hide_side_toolbar:true,allow_symbol_change:true,studies:['RSI@tv-basicstudies','MASimple@tv-basicstudies']})}
@@ -432,22 +458,25 @@ function sc(s){if(s>=65)return'var(--bull)';if(s>=45)return'var(--warn)';return'
 
 function renderMarket(){let h='';if(fng){const col=fng.value>=55?'var(--bull)':(fng.value>=45?'var(--warn)':'var(--bear)');h+=`<div class="market-card"><label>Tâm lý ${I('fng')}</label><div class="v" style="color:${col}">${fng.value}</div><div class="sub" style="color:${col}">${fngVN(fng.label)}</div></div>`}if(regime){h+=`<div class="market-card"><label>Trạng thái ${I('regime')}</label><div class="v ${regime.cls}">${regime.status}</div><div class="sub">Tin cậy ${regime.conf}%</div></div>`}if(global){h+=`<div class="market-card"><label>BTC Dom ${I('dominance')}</label><div class="v">${global.btcDom.toFixed(1)}%</div><div class="sub">thống trị</div></div>`;h+=`<div class="market-card"><label>Vốn hoá ${I('mcap')}</label><div class="v">$${fmtVol(global.mcap)}</div><div class="sub ${global.mcapChg>=0?'up':'down'}">${global.mcapChg>=0?'+':''}${global.mcapChg.toFixed(1)}%</div></div>`}if(stress!=null){const sl=stress<=30?'Bình yên':stress<=60?'Bình thường':stress<=80?'Căng thẳng':'Cực căng',sc2=stress<=30?'var(--bull)':stress<=60?'var(--warn)':'var(--bear)';h+=`<div class="market-card"><label>Áp lực TT ${I('stress')}</label><div class="v" style="color:${sc2}">${stress}</div><div class="sub">${sl}</div></div>`}if(riskMode){const mc=riskMode==='TẤN CÔNG'?'var(--bull)':riskMode==='PHÒNG THỦ'?'var(--bear)':'var(--warn)';h+=`<div class="market-card"><label>Chế độ ${I('mode')}</label><div class="v" style="color:${mc};font-size:12px">${riskMode}</div><div class="sub">tự động</div></div>`}document.getElementById('market-bar').innerHTML=h}
 function renderBreadth(){const el=document.getElementById('breadth');if(!breadth){el.style.display='none';return}el.style.display='flex';el.innerHTML=`<div style="width:${breadth.up}%;background:var(--bull)">${breadth.up}% xanh</div><div style="width:${breadth.nt}%;background:#475569">${breadth.nt}%</div><div style="width:${breadth.dn}%;background:var(--bear)">${breadth.dn}% đỏ</div>`}
-function recoBg(r){if(r.includes('MUA MẠNH'))return'#059669';if(r==='MUA')return'#10B981';if(r.includes('GIỮ'))return'#F59E0B';if(r==='BÁN')return'#EF4444';if(r.includes('TRÁNH'))return'#7f1d1d';return'#b91c1c'}
+function recoBg(r){if(r.includes('MUA MẠNH'))return'#059669';if(r.includes('MUA'))return'#10B981';if(r.includes('CHỜ SÓNG'))return'#7c3aed';if(r.includes('THEO DÕI')||r.includes('GIỮ'))return'#F59E0B';if(r.includes('BÁN'))return'#EF4444';if(r.includes('TRÁNH'))return'#7f1d1d';return'#475569'}
 function renderHeatmap(){const el=document.getElementById('heatmap');const arr=COINS.filter(c=>data[c.symbol]);if(!arr.length){el.innerHTML='';return}el.innerHTML=arr.map(c=>{const d=data[c.symbol];return `<div class="heat-tile" style="background:${recoBg(d.reco)}" onclick="openChart('${c.symbol}','${c.name}')"><div class="n">${c.name}</div><div class="s">${d.aiScore} · ${d.reco}</div></div>`}).join('')}
 
 function render(){
   const box=document.getElementById('tab-watch');
   if(COINS.length===0){box.innerHTML='<p class="empty">Chưa có coin. Nhấn ＋ Thêm coin.</p>';return}
-  let port='',totalPnl=0,hasAny=false,best=null,worst=null;
-  COINS.forEach(coin=>{const d=data[coin.symbol];if(!d)return;if(coin.entry!=null&&coin.amount>0){totalPnl+=(d.price-coin.entry)*coin.amount;hasAny=true}if(!best||d.health>best.s)best={n:coin.name,s:d.health};if(!worst||d.health<worst.s)worst={n:coin.name,s:d.health}});
-  if(COINS.length>1&&best&&worst)port=`<div class="port"><h3>📊 Tổng quan danh mục</h3>${hasAny?`<div class="port-row"><span>Tổng lãi/lỗ</span><b style="color:${totalPnl>=0?'var(--bull)':'var(--bear)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</b></div>`:''}<div class="port-row"><span>💪 Khoẻ nhất (Health)</span><b class="up">${best.n} (${best.s})</b></div><div class="port-row"><span>⚠️ Yếu nhất — cân nhắc xử lý</span><b class="down">${worst.n} (${worst.s})</b></div></div>`;
+  let port='',totalPnl=0,hasAny=false,best=null,worst=null,acts='';
+  COINS.forEach(coin=>{const d=data[coin.symbol];if(!d)return;if(coin.entry!=null){const act=d.posStatus==='Thoát'?'🔴 Cắt lỗ / thoát':d.posStatus==='Giảm rủi ro'?'🟠 Chốt bớt':d.posStatus==='Theo dõi'?'🟡 Giữ, theo dõi':'🟢 Giữ';acts+=`<div class="port-row"><span>${coin.name}</span><b>${act}${d.posHealth!=null?' ('+d.posHealth+')':''}</b></div>`;if(coin.amount>0){totalPnl+=(d.price-coin.entry)*coin.amount;hasAny=true}}if(!best||d.health>best.s)best={n:coin.name,s:d.health};if(!worst||d.health<worst.s)worst={n:coin.name,s:d.health}});
+  if(COINS.length>1&&best&&worst)port=`<div class="port"><h3>📊 Tổng quan danh mục</h3>${hasAny?`<div class="port-row"><span>Tổng lãi/lỗ</span><b style="color:${totalPnl>=0?'var(--bull)':'var(--bear)'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</b></div>`:''}<div class="port-row"><span>💪 Khoẻ nhất (Health)</span><b class="up">${best.n} (${best.s})</b></div><div class="port-row"><span>⚠️ Yếu nhất</span><b class="down">${worst.n} (${worst.s})</b></div>${acts?'<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><div class="small-note" style="text-align:left;margin:0 0 4px">🤖 Gợi ý xử lý coin đang giữ:</div>'+acts+'</div>':''}</div>`;
   let html='<div style="text-align:right;margin-bottom:8px"><span class="btn" style="padding:4px 10px;font-size:11px" onclick="expandAll(true)">⤢ Mở tất cả</span> <span class="btn" style="padding:4px 10px;font-size:11px" onclick="expandAll(false)">⤡ Thu gọn</span></div>'+port;
-  COINS.forEach(coin=>{
-    const d=data[coin.symbol];
-    if(!d){html+=`<div class="card"><button class="delete-btn" onclick="deleteCoin('${coin.symbol}')">✕</button><div class="card-head"><span class="coin-name">${coin.name}</span><span style="color:var(--t2);font-size:12px">Đang phân tích...</span></div></div>`;return}
+  COINS.forEach(coin=>{html+=coinCard(coin,data)});
+  box.innerHTML=html;
+}
+function coinCard(coin,src){let html='';
+    const d=(src||data)[coin.symbol];
+    if(!d){html+=`<div class="card"><button class="delete-btn" onclick="deleteCoin('${coin.symbol}')">✕</button><div class="card-head"><span class="coin-name">${coin.name}</span><span style="color:var(--t2);font-size:12px">Đang phân tích...</span></div></div>`;return html}
     const price=d.price,hasEntry=coin.entry!=null;const pct=hasEntry?((price-coin.entry)/coin.entry*100):null,pnlUsd=(hasEntry&&coin.amount>0)?((price-coin.entry)*coin.amount):null;
     const isProfit=pct>=0,isSLHit=price<=d.SL,hitTPs=d.TP.filter(tp=>price>=tp),ex=expanded[coin.symbol],b4=d.tf['4h'];
-    if(!cardOpen[coin.symbol]){html+=`<div class="card" style="cursor:pointer;padding:12px" onclick="toggleCard('${coin.symbol}')"><button class="delete-btn" onclick="event.stopPropagation();deleteCoin('${coin.symbol}')">✕</button><div class="card-head" style="margin-bottom:4px;padding-right:22px"><div><span class="coin-name" style="font-size:16px">${coin.name}</span> <span class="grade ${d.gradeCls}">${d.grade}</span></div><div style="text-align:right"><div class="price" style="font-size:16px;color:${hasEntry?(isProfit?'var(--bull)':'var(--bear)'):'var(--t1)'}">$${fmt(price)}</div><div class="chg ${d.change24>=0?'up':'down'}">${d.change24>=0?'▲':'▼'} ${Math.abs(d.change24).toFixed(1)}%</div></div></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="reco ${d.recoClass}" style="font-size:14px">${d.reco}</span><span style="font-size:11px;color:var(--t2)">AI ${d.aiScore}${hasEntry?' · '+(isProfit?'+':'')+pct.toFixed(1)+'%':' · RS '+d.rs} · ▼ mở</span></div></div>`;return}
+    if(!cardOpen[coin.symbol]){html+=`<div class="card" style="cursor:pointer;padding:12px" onclick="toggleCard('${coin.symbol}')"><button class="delete-btn" onclick="event.stopPropagation();deleteCoin('${coin.symbol}')">✕</button><div class="card-head" style="margin-bottom:4px;padding-right:22px"><div><span class="coin-name" style="font-size:16px">${coin.name}</span> <span class="grade ${d.gradeCls}">${d.grade}</span></div><div style="text-align:right"><div class="price" style="font-size:16px;color:${hasEntry?(isProfit?'var(--bull)':'var(--bear)'):'var(--t1)'}">$${fmt(price)}</div><div class="chg ${d.change24>=0?'up':'down'}">${d.change24>=0?'▲':'▼'} ${Math.abs(d.change24).toFixed(1)}%</div></div></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="reco ${d.recoClass}" style="font-size:14px">${d.reco}</span><span style="font-size:11px;color:var(--t2)">AI ${d.aiScore}${hasEntry?' · '+(isProfit?'+':'')+pct.toFixed(1)+'%':' · RS '+d.rs} · ▼ mở</span></div></div>`;return html}
     let alerts='';
     if(d.trap)alerts+=`<div class="trap-warn">🪤 ${d.trap.type} (${d.trap.prob}%)${d.trap.bullish?' — có thể là cơ hội':' — KHÔNG nên đuổi giá!'}</div>`;
     if(d.sellSig.length>=3){alerts+=`<div class="alert-box alert-sell">🚨 CẢNH BÁO BÁN: ${d.sellSig.join(' · ')}</div>`;maybeNotify('sell-'+coin.symbol+Math.floor(Date.now()/3600000),'🚨 '+coin.name+' Cảnh báo BÁN',d.sellSig.join(', '))}
@@ -469,7 +498,7 @@ function render(){
       <div class="prob-bar"><div style="width:${d.prob.bull}%;background:var(--bull)">Tăng ${d.prob.bull}%</div><div style="width:${d.prob.neu}%;background:#475569">${d.prob.neu}%</div><div style="width:${d.prob.bear}%;background:var(--bear)">Giảm ${d.prob.bear}%</div></div>
       ${d.noChase?`<div class="alert-box alert-vol">⛔ Giá đã chạy xa (giai đoạn ${d.trendStage}) — ĐỪNG đuổi! Chờ pullback về $${fmt(d.pullback.lo)} – $${fmt(d.pullback.hi)} ${I('nochase')}</div>`:''}
       ${d.exitScore>60?`<div class="alert-box alert-sell">🏁 Tín hiệu thoát mạnh (${d.exitScore}/100): ${d.exitLabel} — cân nhắc chốt lời ${I('smartexit')}</div>`:''}
-      ${hasEntry?`<div class="entry-row"><span>Giá mua: $${fmt(coin.entry)}</span><span class="pnl ${isProfit?'profit':'loss'}">${isProfit?'+':''}${pct.toFixed(2)}%</span></div>`:''}
+      ${hasEntry?`<div class="entry-row"><span>Giá mua: $${fmt(coin.entry)}</span><span class="pnl ${isProfit?'profit':'loss'}">${isProfit?'+':''}${pct.toFixed(2)}%</span></div>`:`<div class="entry-row" style="background:#1f6feb14;padding:7px 10px;border-radius:8px;border-left:3px solid var(--info)"><span>🎯 Vùng vào gợi ý</span><b style="color:var(--info)">$${fmt(d.entryLow)} – $${fmt(d.entryHigh)}${d.coiling?' · phá $'+fmt(d.resistance):''}</b></div>`}
       ${hasEntry&&d.posHealth!=null?`<div class="entry-row"><span>🩺 Sức khoẻ vị thế ${I('posmgmt')}</span><b class="${d.posStatusCls}">${d.posHealth}/100 · ${d.posStatus}</b></div>`:''}
       <div class="block-title">Lý do</div>
       <div>${d.reasons.slice(0,ex?99:3).map(r=>`<div class="reason ${r.c}">${r.c==='pos'?'✓':r.c==='neg'?'✗':'•'} ${r.t}</div>`).join('')}${d.risks.slice(0,ex?99:2).map(r=>`<div class="risk-line">⚠ ${r}</div>`).join('')}</div>
@@ -495,11 +524,14 @@ function render(){
           <div class="ind"><label>Cấu trúc ${I('structure')}</label><div class="v neu" style="font-size:10px">${b4.ms.label}</div></div>
           <div class="ind"><label>BOS/CHOCH ${I('bos')}</label><div class="v ${b4.ms.bos?'up':'neu'}">${b4.ms.bos?'BOS ↑':b4.ms.choch?'Đảo':'—'}</div></div>
         </div>
+        ${d.dex?(d.dex.buys+d.dex.sells>=20&&d.dex.liqUsd>=10000&&d.dex.vol24>=2000?`<div class="block-title">🔵 Dòng tiền DEX ${I('dexflow')}</div><div class="prob-bar"><div style="width:${Math.round(d.dex.ratio*100)}%;background:var(--bull)">Mua ${Math.round(d.dex.ratio*100)}%</div><div style="width:${100-Math.round(d.dex.ratio*100)}%;background:var(--bear)">Bán ${100-Math.round(d.dex.ratio*100)}%</div></div><div class="fut-row"><span class="fut-pill">Thanh khoản <b>$${fmtVol(d.dex.liqUsd)}</b></span><span class="fut-pill">Vol DEX 24h <b>$${fmtVol(d.dex.vol24)}</b></span><span class="fut-pill">${d.dex.chain}/${d.dex.dex}</span></div>`:`<div class="block-title">🔵 Dòng tiền DEX ${I('dexflow')}</div><div class="small-note" style="text-align:left">Giao dịch DEX không đáng kể (coin này chủ yếu trên sàn CEX) — bỏ qua chỉ số này.</div>`):''}
+        ${d.safety?`<div class="block-title">🛡️ An toàn contract ${I('contractsafe')}</div><div class="fut-row"><span class="fut-pill" style="border:1px solid ${d.safety.riskCls==='down'?'var(--bear)':d.safety.riskCls==='warn'?'var(--warn)':'var(--bull)'};color:${d.safety.riskCls==='down'?'var(--bear)':d.safety.riskCls==='warn'?'var(--warn)':'var(--bull)'}">Risk ${d.safety.risk}/100 · ${d.safety.label}</span>${d.safety.flags.map(f=>`<span class="fut-pill" style="color:var(--bear)">${f}</span>`).join('')||'<span class="fut-pill" style="color:var(--bull)">✓ Không thấy cờ đỏ</span>'}</div>`:''}
         <div class="block-title">Kế hoạch vào lệnh ${I('entries')}</div>
         <div class="plan">
           <div class="plan-row"><span class="lbl">🔵 Vào mạnh dạn</span><b>$${fmt(d.entries.agg)}</b></div>
           <div class="plan-row"><span class="lbl">🔵 Vào tiêu chuẩn</span><b>$${fmt(d.entries.std)}</b></div>
           <div class="plan-row"><span class="lbl">🔵 Vào thận trọng</span><b>$${fmt(d.entries.cons)}</b></div>
+          <div class="plan-row"><span class="lbl">VWAP (hỗ trợ động) ${I('vwap')}</span><b class="${price>b4.vwap?'up':'down'}">$${fmt(b4.vwap)}</b></div>
           <div class="plan-row"><span class="lbl">🔴 Cắt lỗ (SL)</span><b class="down">$${fmt(d.SL)} (${((d.SL/price-1)*100).toFixed(0)}%)</b></div>
           <div class="plan-row"><span class="lbl">🟢 TP1 (chốt 25%)</span><b class="up">$${fmt(d.TP[0])} (+${((d.TP[0]/price-1)*100).toFixed(0)}%)</b></div>
           <div class="plan-row"><span class="lbl">🟢 TP2 (chốt 25%)</span><b class="up">$${fmt(d.TP[1])} (+${((d.TP[1]/price-1)*100).toFixed(0)}%)</b></div>
@@ -511,15 +543,15 @@ function render(){
         <div class="small-note">Sau TP2: dời cắt lỗ lên giá vào (trailing) · Hạn tín hiệu ~${d.expHours}h ${I('expire')}</div>
       </div>
     </div>`;
-  });
-  box.innerHTML=html;
+  return html;
 }
 
 function scanItem(s,extra,showRs){const name=s.symbol.replace('USDT','');return `<div class="scan-card"><div class="scan-head"><span class="scan-name" onclick="openChart('${s.symbol}','${name}')">🔥 ${name} <span style="font-size:11px;color:var(--info)">📈</span></span><span style="color:var(--bull);font-weight:800">${extra}</span></div><div class="scan-detail">$${fmt(s.price)} ${s.rsi?'· RSI '+s.rsi.toFixed(0):''} ${showRs?'· RS '+s.rs:''} · KL ${fmtVol(s.qv)}$ · 24h ${s.change>=0?'+':''}${s.change.toFixed(1)}%</div><div class="scan-actions"><button class="btn btn-green" onclick="addFromScan('${s.symbol}')">+ Theo dõi</button><button class="btn" onclick="openChart('${s.symbol}','${name}')">📈 Chart</button></div></div>`}
 function sec(title,arr,fn,showRs){if(!arr||!arr.length)return `<div class="section-title">${title}</div><div class="empty" style="padding:12px">Không có coin phù hợp (ưu tiên độ chính xác)</div>`;return `<div class="section-title">${title}</div>`+arr.map(s=>scanItem(s,fn(s),showRs)).join('')}
 function renderScan(){if(!scanResults){document.getElementById('tab-scan').innerHTML='<div class="empty">Nhấn 🔍 Quét cơ hội.</div>';return}let h='<div class="small-note">🎯 Ưu tiên coin NÉN CHẶT, CHƯA tăng — đón sóng SỚM thay vì đu đỉnh</div>';h+=sec('🌊 SẮP CÓ SÓNG (nén chặt)',scanResults.coil,s=>'Nén '+s.squeeze+'%',true);h+=sec('💧 QUÁ BÁN — chờ hồi',scanResults.oversold,s=>'RSI '+s.rsi.toFixed(0),true);h+=sec('💪 MẠNH HƠN BTC (chưa tăng)',scanResults.strong,s=>'RS '+s.rs,true);document.getElementById('tab-scan').innerHTML=h}
-function renderAlpha(){if(!alphaResults){document.getElementById('tab-alpha').innerHTML='<div class="empty">Đang quét...</div>';return}let h='<div class="section-title">⚡ EARLY ALPHA — Tích luỹ, sắp chạy (CHƯA tăng)</div><div class="small-note">⚠️ Bắt sóng SỚM = tiềm năng cao nhưng có thể đi ngang lâu. Vào ít vốn, kiên nhẫn, cắt lỗ chặt!</div>';if(!alphaResults.length)h+='<div class="empty">Chưa thấy coin tích luỹ rõ rệt lúc này. Quét lại sau.</div>';else h+=alphaResults.map(s=>{const name=s.symbol.replace('USDT','');return `<div class="scan-card" style="border-color:#a855f755"><div class="scan-head"><span class="scan-name" onclick="openChart('${s.symbol}','${name}')">⚡ ${name} 📈</span><span style="color:var(--purple);font-weight:800">Alpha ${s.score} ${I('earlyalpha')}</span></div><div class="scan-detail">$${fmt(s.price)} · RS ${s.rs} · Nén ${s.squeeze}% · dưới đỉnh30 ${s.near30}% · 24h ${s.change>=0?'+':''}${s.change.toFixed(1)}%</div><div class="scan-actions"><button class="btn btn-green" onclick="addFromScan('${s.symbol}')">+ Theo dõi</button><button class="btn" onclick="openChart('${s.symbol}','${name}')">📈 Chart</button></div></div>`}).join('');document.getElementById('tab-alpha').innerHTML=h}
-function renderSector(){const box=document.getElementById('tab-sector');if(!sectorResults||!sectorResults.length){box.innerHTML='<div class="empty">Chưa có dữ liệu ngành. Chờ tải xong...</div>';return}const top=sectorResults[0],bot=sectorResults[sectorResults.length-1];let h=`<div class="section-title">🧩 Dòng tiền theo ngành ${I('sector')}</div><div class="sector" style="border:1px solid var(--border)"><span>💰 Dòng tiền ${I('caprotation')}</span><b><span class="up">👑 ${top.sector}</span> → <span class="down">${bot.sector} ↓</span></b></div><div class="small-note">Ngành đầu bảng = nơi tiền đang đổ về → ưu tiên săn coin trong ngành đó</div>`;sectorResults.forEach((s,i)=>{const col=s.avg>=0?'var(--bull)':'var(--bear)';h+=`<div class="sector"><span>${i===0?'👑 ':''}${s.sector} <span style="color:var(--t2);font-size:10px">(${s.n} coin)</span></span><b style="color:${col}">${s.avg>=0?'+':''}${s.avg.toFixed(1)}% (24h)</b></div>`});box.innerHTML=h}
+function renderAlpha(){if(!alphaResults){document.getElementById('tab-alpha').innerHTML='<div class="empty">Đang quét...</div>';return}let h='<div class="section-title">⚡ TÍCH LUỸ SỚM — coin nén, sắp chạy (CHƯA tăng)</div><div class="small-note">⚠️ Bắt sóng SỚM = tiềm năng cao nhưng có thể đi ngang lâu. Vào ít vốn, kiên nhẫn, cắt lỗ chặt!</div>';if(!alphaResults.length)h+='<div class="empty">Chưa thấy coin tích luỹ rõ rệt lúc này. Quét lại sau.</div>';else h+=alphaResults.map(s=>{const name=s.symbol.replace('USDT','');return `<div class="scan-card" style="border-color:#a855f755"><div class="scan-head"><span class="scan-name" onclick="openChart('${s.symbol}','${name}')">⚡ ${name} 📈</span><span style="color:var(--purple);font-weight:800">Alpha ${s.score} ${I('earlyalpha')}</span></div><div class="scan-detail">$${fmt(s.price)} · RS ${s.rs} · Nén ${s.squeeze}% · dưới đỉnh30 ${s.near30}% · 24h ${s.change>=0?'+':''}${s.change.toFixed(1)}%</div><div class="scan-actions"><button class="btn btn-green" onclick="addFromScan('${s.symbol}')">+ Theo dõi</button><button class="btn" onclick="openChart('${s.symbol}','${name}')">📈 Chart</button></div></div>`}).join('');document.getElementById('tab-alpha').innerHTML=h}
+function renderBAlpha(){const box=document.getElementById('tab-balpha');if(!box)return;let h='<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">🅰️ Binance Alpha (tự quản lý) <button class="btn btn-green" style="padding:5px 10px;font-size:11px" onclick="openBAlphaModal()">＋ Thêm coin</button></div><div class="small-note" style="text-align:left">Binance không mở API danh sách Alpha → anh tự thêm coin Alpha muốn theo dõi. App phân tích đầy đủ (điểm vào, CHỜ SÓNG...) như tab Theo dõi.</div>';if(!BALPHA.length){h+='<div class="empty">Chưa có coin. Nhấn ＋ Thêm coin (VD: FHE, COAI, 4...).</div>';box.innerHTML=h;return}BALPHA.forEach(coin=>{h+=coinCard(coin,dataBAlpha)});box.innerHTML=h}
+function renderSector(){const box=document.getElementById('tab-sector');if(!sectorResults||!sectorResults.length){box.innerHTML='<div class="empty">Chưa có dữ liệu ngành. Chờ tải xong...</div>';return}const top=sectorResults[0],bot=sectorResults[sectorResults.length-1];let h=`<div class="section-title">🧩 Dòng tiền theo ngành ${I('sector')}</div><div class="sector" style="border:1px solid var(--border)"><span>💰 Dòng tiền ${I('caprotation')}</span><b><span class="up">👑 ${top.sector}</span> → <span class="down">${bot.sector} ↓</span></b></div><div class="small-note">Bấm coin để xem chart · ngành đầu bảng = tiền đang đổ về</div>`;sectorResults.forEach((s,i)=>{const col=s.avg>=0?'var(--bull)':'var(--bear)';h+=`<div class="sector" style="margin-top:10px;font-weight:700"><span>${i===0?'👑 ':''}${s.sector} <span style="color:var(--t2);font-size:10px;font-weight:400">(${s.n} coin)</span></span><b style="color:${col}">${s.avg>=0?'+':''}${s.avg.toFixed(1)}% TB</b></div>`;h+=s.coins.slice(0,5).map(c=>{const name=c.symbol.replace('USDT','');return `<div class="sector" style="padding:6px 11px;font-size:12px;cursor:pointer" onclick="openChart('${c.symbol}','${name}')"><span>${name} 📈</span><b class="${c.change>=0?'up':'down'}">${c.change>=0?'+':''}${c.change.toFixed(1)}%</b></div>`}).join('')});box.innerHTML=h}
 
 // ===== Trade Journal (nhật ký thật, không bịa số) =====
 function loadJournal(){try{return JSON.parse(localStorage.getItem('journal'))||[]}catch{return[]}}
